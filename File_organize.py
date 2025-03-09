@@ -4,6 +4,7 @@ import argparse
 import logging
 import time
 import threading
+import json
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from pymongo import MongoClient
@@ -14,6 +15,9 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
+
+# Persistent Task Storage File
+TASK_FILE = "file_tasks.json"
 
 # MongoDB Configuration
 MONGO_URI = "mongodb://localhost:27017/"  # Update with your MongoDB URI
@@ -46,6 +50,20 @@ def log_to_mongodb(task_name, details, status, level="INFO"):
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
     }
     logs_collection.insert_one(log_entry)
+
+def load_tasks():
+    """Load tasks from the JSON file."""
+    try:
+        with open(TASK_FILE, "r") as f:
+            tasks = json.load(f)
+            return tasks if isinstance(tasks, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+def save_tasks(tasks):
+    """Save tasks to the JSON file."""
+    with open(TASK_FILE, "w") as f:
+        json.dump(tasks, f, indent=4)
 
 def organize_files(directory):
     """Organize files in the given directory based on their extensions."""
@@ -82,34 +100,61 @@ def organize_files(directory):
 
 def add_task(interval, unit, directory):
     """Add a new file organization task to the scheduler."""
+    tasks = load_tasks()
+    task_name = f"task_{len(tasks) + 1}"
+
+    new_task_details = {
+        "interval": interval,
+        "unit": unit,
+        "directory": directory
+    }
+
+    # Check for duplicates
+    for existing_task_details in tasks.values():
+        if new_task_details == existing_task_details:
+            print("⚠️ Task with the same interval and details already exists.")
+            return
+
+    tasks[task_name] = new_task_details
+    save_tasks(tasks)
+
     trigger = IntervalTrigger(**{unit: interval})
-    scheduler.add_job(organize_files, trigger, args=[directory], id=f"organize_{directory}")
+    scheduler.add_job(organize_files, trigger, args=[directory], id=task_name)
+
     logging.info(f"Added task to organize '{directory}' every {interval} {unit}.")
     log_to_mongodb("add_task", {"directory": directory, "interval": interval, "unit": unit}, "Task added")
-    print(f"✅ Task added to organize '{directory}' every {interval} {unit}.")
+    print(f"✅ Task '{task_name}' added successfully.")
 
 def list_tasks():
     """List all scheduled file organization tasks."""
-    jobs = scheduler.get_jobs()
-    if not jobs:
+    tasks = load_tasks()
+    if not tasks:
         print("⚠️ No scheduled tasks found.")
         return
     
     print("\n📌 Scheduled File Organization Tasks:")
-    for job in jobs:
-        print(f"🔹 {job.id} - Every {job.trigger.interval} {job.trigger.interval_length}")
+    for task_name, details in tasks.items():
+        print(f"🔹 {task_name} - Every {details['interval']} {details['unit']}")
 
-def remove_task(task_id):
+def remove_task(task_name):
     """Remove a scheduled file organization task."""
+    tasks = load_tasks()
+    if task_name not in tasks:
+        print(f"⚠️ Task '{task_name}' not found.")
+        return
+
+    del tasks[task_name]
+    save_tasks(tasks)
+
     try:
-        scheduler.remove_job(task_id)
-        logging.info(f"Removed task '{task_id}'.")
-        log_to_mongodb("remove_task", {"task_id": task_id}, "Task removed")
-        print(f"✅ Task '{task_id}' removed successfully.")
+        scheduler.remove_job(task_name)
+        logging.info(f"Removed task '{task_name}'.")
+        log_to_mongodb("remove_task", {"task_id": task_name}, "Task removed")
+        print(f"✅ Task '{task_name}' removed successfully.")
     except Exception as e:
-        logging.error(f"Failed to remove task '{task_id}': {e}")
-        log_to_mongodb("remove_task", {"task_id": task_id, "error": str(e)}, "Error", level="ERROR")
-        print(f"⚠️ Task '{task_id}' not found.")
+        logging.error(f"Failed to remove task '{task_name}': {e}")
+        log_to_mongodb("remove_task", {"task_id": task_name, "error": str(e)}, "Error", level="ERROR")
+        print(f"⚠️ Task '{task_name}' not found.")
 
 # CLI Argument Parsing
 parser = argparse.ArgumentParser(description="File Organization Scheduler")
@@ -130,6 +175,21 @@ elif args.list:
     list_tasks()
 elif args.remove:
     remove_task(args.remove)
+
+def load_and_schedule_tasks():
+    """Load and schedule tasks from the JSON file."""
+    tasks = load_tasks()
+    for task_name, details in tasks.items():
+        trigger = IntervalTrigger(**{details["unit"]: details["interval"]})
+        scheduler.add_job(
+            organize_files,
+            trigger,
+            args=[details["directory"]],
+            id=task_name,
+        )
+
+# Load and schedule tasks before parsing commands
+load_and_schedule_tasks()
 
 def start_scheduler():
     """Runs the scheduler in a separate thread."""
