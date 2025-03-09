@@ -100,8 +100,8 @@ def organize_files(directory):
 
 def add_task(interval, unit, directory):
     """Add a new file organization task to the scheduler."""
-    tasks = load_tasks()
-    task_name = f"task_{len(tasks) + 1}"
+    tasks = load_tasks()  # Load existing tasks
+    task_name = f"task_{len(tasks) + 1}"  # Generate a unique task name
 
     new_task_details = {
         "interval": interval,
@@ -119,10 +119,13 @@ def add_task(interval, unit, directory):
             print("⚠️ Task with the same interval and directory already exists.")
             return
 
-    # Add the new task
+    # Add the new task to the tasks dictionary
     tasks[task_name] = new_task_details
+
+    # Save the updated tasks dictionary to the JSON file
     save_tasks(tasks)
 
+    # Schedule the task
     trigger = IntervalTrigger(**{unit: interval})
     scheduler.add_job(organize_files, trigger, args=[directory], id=task_name)
 
