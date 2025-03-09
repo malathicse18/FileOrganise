@@ -110,11 +110,16 @@ def add_task(interval, unit, directory):
     }
 
     # Check for duplicates
-    for existing_task_details in tasks.values():
-        if new_task_details == existing_task_details:
-            print("⚠️ Task with the same interval and details already exists.")
+    for existing_task_name, existing_task_details in tasks.items():
+        if (
+            existing_task_details["interval"] == interval
+            and existing_task_details["unit"] == unit
+            and existing_task_details["directory"] == directory
+        ):
+            print("⚠️ Task with the same interval and directory already exists.")
             return
 
+    # Add the new task
     tasks[task_name] = new_task_details
     save_tasks(tasks)
 
