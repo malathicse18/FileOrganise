@@ -147,22 +147,26 @@ def list_tasks():
 def remove_task(task_name):
     """Remove a scheduled file organization task."""
     tasks = load_tasks()
+    
+    # Check if the task exists in the tasks dictionary
     if task_name not in tasks:
         print(f"⚠️ Task '{task_name}' not found.")
         return
 
+    # Remove the task from the tasks dictionary
     del tasks[task_name]
     save_tasks(tasks)
 
-    try:
+    # Remove the task from the scheduler
+    if scheduler.get_job(task_name):  # Check if the job exists in the scheduler
         scheduler.remove_job(task_name)
         logging.info(f"Removed task '{task_name}'.")
         log_to_mongodb("remove_task", {"task_id": task_name}, "Task removed")
         print(f"✅ Task '{task_name}' removed successfully.")
-    except Exception as e:
-        logging.error(f"Failed to remove task '{task_name}': {e}")
-        log_to_mongodb("remove_task", {"task_id": task_name, "error": str(e)}, "Error", level="ERROR")
-        print(f"⚠️ Task '{task_name}' not found.")
+    else:
+        logging.warning(f"Task '{task_name}' not found in the scheduler.")
+        log_to_mongodb("remove_task", {"task_id": task_name}, "Task not found in scheduler", level="WARNING")
+        print(f"⚠️ Task '{task_name}' was not running but removed from saved tasks.")
 
 # CLI Argument Parsing
 parser = argparse.ArgumentParser(description="File Organization Scheduler")
